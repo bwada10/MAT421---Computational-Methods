@@ -1,0 +1,193 @@
+---
+title: "Centene Daily Closing Price"
+author: "Takahiro Wada"
+date: "2023-04-16"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, include=FALSE}
+library(tidyr)
+library(caret)
+library(leaps)
+library(readxl)
+library(Hmisc)
+library(olsrr)
+library(MASS)
+library(car)
+```
+
+## Introduction
+
+Our goal is to identify the most effective multiple variable model for predicting the daily closing price of Centene (CNC). To achieve this objective, we will leverage the predictive power of four key stocks - Anthem (ANTM), Cigna (CI), United Health Group (UNH), and Humana (HUM) - and examine their relationship with CNC.
+
+Once we have established the most effective predictive model, we will be able to use it to inform our investment decisions and optimize our portfolio. By leveraging data-driven insights, we can make informed investment choices that lead to greater returns and success in the marketplace.
+
+Overall, our analysis will provide valuable insights into the relationship between these stocks and CNC, and help us make more informed decisions when it comes to investing in the healthcare sector.
+
+## The Data
+```{r, include=TRUE, comment=NA}
+importdata <- read_excel("ClosingPrices.xlsx")
+mydata <- importdata[,c(19,9,22,34,57)]
+sum(is.na(mydata))
+```
+
+I loaded in the data into R from the Excel file. The file contains 58 different healthcare stocks daily closing price, but I chose only the 5 stocks that are in the same GICS sub-industry category as Centene, Managed Healthcare. I checked to see any missing values or error in the data set, but there is none. This data set was collected by the NASDAQ historical quotes from November 2, 2020 to October 28, 2021.
+
+## Analyzing the Variables
+
+I made a scatter plot with each predictor variable to visually analyze the graph and identify any relationship with Centene's daily closing price. This will give us an idea of which predictor variable will be most significant towards our final model.
+
+### Scatter Plots of CNC VS HUM
+```{r}
+plot(x = mydata$HUM, y = mydata$CNC, main = "Scatterplot of CNC vs HUM",
+     xlab = "Humana", ylab = "Centene")
+```
+
+We see a moderate linear relationship between Centene and Humana with moderate dispersion in the upper right region.
+
+### Scatter Plots of CNC VS ANTM
+```{r}
+plot(x = mydata$ANTM, y = mydata$CNC, main = "Scatterplot of CNC vs ANTM",
+     xlab = "Anthem", ylab = "Centene")
+```
+
+We see a moderate linear relationship between Centene and Anthem with moderate dispersion in the upper right region.
+
+### Scatter Plots of CNC VS UNH
+```{r}
+plot(x = mydata$UNH, y = mydata$CNC, main = "Scatterplot of CNC vs UNH",
+     xlab = "United Health Group", ylab = "Centene")
+```
+
+We see a moderate linear relationship between Centene and United Health Group with moderate dispersion in the upper region. 
+
+### Scatter Plots of CNC VS CI
+```{r}
+plot(x = mydata$CI, y = mydata$CNC, main = "Scatterplot of CNC vs CI",
+     xlab = "Cigna", ylab = "Centene")
+```
+
+We see a moderate linear relationship between Centene and Cigna with moderate dispersion in the upper region.
+
+## Verifying Error Assumptions
+
+We must confirm that our data set is fit to be used in our model by analyzing the error. 
+
+### Sum of Residuals
+```{r, comment=NA}
+basicModel <- lm(mydata$CNC ~ mydata$ANTM + mydata$CI + mydata$HUM + mydata$UNH, data = mydata)
+sum(resid(basicModel))
+```
+As we can see, the sum of errors is very close to 0. This indicates that the model is a good fit for the data, and that the predicted values are similar to the actual values. However, simply adding up residuals is not enough to determine the overall goodness of fit of the model. We will next plot a normal Q-Q plot to visually see if the data is normally distributed.
+
+### Normal Q-Q plot
+```{r}
+residual <- basicModel$residuals
+qqnorm(residual, main="Normal Q-Q Plot of Residuals from basicModel")
+qqline(residual)
+```
+
+As we can see from the graph, the data is not perfectly linear with the Q-Q line. Based off the curvature on both ends of the graph, a quadratic terms may help the normality of the error terms.
+
+### Correlation Matrix
+```{r, include=TRUE, comment=NA}
+mydata.rcorr = rcorr(as.matrix(mydata))
+mydata.rcorr
+```
+We want to determine numerically which predictor variables are linearly correlated with Centene. Scatter plots alone is not enough to determine which variables to use. Looking at the correlation matrix, each variable had a linear coefficient value greater than 0.50 and a p-value less than 0.05 making each predictor variable significant. We can see that Humana has the highest linear coefficient value. 
+
+## Variable Selection Process
+
+Based off the scatter plots and correlation matrix, each predictor variable seems significant enough to be included towards the model. However, to make sure we have selected the right variables to create our model, we will run a Stepwise Akaike Information Criterion (AIC) regression. It involves a step-by-step process of adding or removing variables from a model based on their statistical significance and their contribution to the overall goodness of fit of the model.
+
+The AIC is a measure of the relative quality of a statistical model, and it is based on the likelihood function of the model and the number of parameters included in the model. The lower the AIC value, the better the model fits the data. 
+
+### Stepwise AIC Variable Selection
+```{r, comment=NA}
+model <- lm(mydata$CNC ~ mydata$ANTM + mydata$CI + mydata$HUM + mydata$UNH, data = mydata)
+ols_step_both_aic(model, details = TRUE)
+```
+
+From the four variables, the selection process did not include United Health Group into the final model as it determines it was not significant towards the model. We will use Anthem (ANTM), Cigna (CI), and Humana (HUM) in our model. Currently, the model has an Adjusted R-Squared of 0.636 and RMSE of 2.814. Hopefully adding more complex terms will improve the overall model.
+
+## Interaction Terms
+
+Since all the stocks are in the same sub-industry of healthcare, it is logical to think that each stock may be related to one another. We will add the interaction terms into the model and analyze each interaction variables p-values in hopes of improvement.
+
+```{r, comment=NA}
+InteractionModel <- lm(mydata$CNC ~ mydata$ANTM + mydata$CI +
+                         mydata$HUM + mydata$ANTM*mydata$CI + 
+                         mydata$ANTM*mydata$HUM + mydata$CI*mydata$HUM,
+                          data = mydata)
+summary(InteractionModel)
+```
+
+From the summary, we can see that the interaction term ANTMxHUM is not significant and will be removed from the model. We also see that adding the interaction terms have increased the Adjusted R-Squared value.
+
+
+## Quadratic Terms
+
+We will next add quadratic terms to the model and determine if they are significant to the model.
+
+```{r, comment=NA}
+sqANTM <- mydata$ANTM^2
+sqCI <- mydata$CI^2
+sqHUM <- mydata$HUM^2
+sqUNH <- mydata$UNH^2
+QuadraticModel <- lm(mydata$CNC ~ mydata$ANTM + mydata$CI + mydata$HUM + 
+                         mydata$ANTM*mydata$CI + mydata$CI*mydata$HUM + sqANTM + sqCI + sqHUM,
+                          data = mydata)
+summary(QuadraticModel)
+```
+
+From the summary, we can see that the quadratic term sqHUM^2 is not significant and will be removed from the model. We also see that adding the quadratic terms have increased the R-Squared value.
+
+## Multicollinearity
+
+Since we are using multiple predictor variables in this model, it is important to confirm none of the variables are correlated to one another. 
+
+```{r, comment=NA}
+vif(lm(mydata$CNC ~ mydata$ANTM + mydata$CI + mydata$HUM,
+                          data = mydata))
+```
+
+Based on the Variance Inflation factor, we see each predictor variable is less than 10. There is no multicollinearity.
+
+## Final Model
+```{r, comment=NA}
+FinalModel <- lm(mydata$CNC ~ mydata$ANTM + mydata$CI + mydata$HUM +
+                         mydata$ANTM*mydata$CI + mydata$CI*mydata$HUM + sqANTM + sqCI,
+                          data = mydata)
+summary(FinalModel)
+
+```
+
+Our final model is :
+
+$\small Y=-114.1 - 0.8162(X_1, ANTM) + 1.586(X_2,CI) + 0.5642(X_3, HUM)
+  - 0.0004764(X_4, ANTM^2) - 0.005867(X_5,CI^2) + 0.005584(X_6,ANTMxCI) - 0.002245(X_7, CIxHUM)$
+  
+The final model has an R-Square Adjusted = 0.7481 which means that 74.81% of the variation in
+Centene’s daily closing price are explained by the predictor variables. The R-Squared Adjusted is greater than the acceptable value for R-Squared Adjusted of 50%. The F-Statistic = 106.6 and P-Value = <0.0001. I also noticed when we removed the non-significant interaction and quadratic term, our overall model and the independent variables t-test statistics have improved, so it is safe to say we have found our best prediction model.
+
+```{r}
+resids <- FinalModel$residuals
+qqnorm(resids, main="Normal Q-Q Plot of Residuals from FinalModel")
+qqline(resids)
+```
+
+As we can see, the Normal Q-Q plot shows the residuals are normally distibuted with majority of data points on the line with a few outliers on both ends of the line.
+
+## Conclusion
+
+I can confidently conclude that we have developed the best model for predicting Cenetene's daily closing price using predictor variables: ANTM, CI, HUM, ANTM^2, CI^2, ANTMxCI, CIxHUM. 
+
+## Dataset Citation
+
+“Market Activity Market Activity -&gt; Stocks Options Etfs Mutual Funds Indexes Commodities Cryptocurrency Currencies Futures Fixed Income Global Markets Quick Links Real-Time Quotes after-Hours Quotes Pre-Market Quotes NASDAQ-100 Symbol Screener Online Brokers Glossary Sustainable Bond Network Symbol Change History IPO Performance Ownership Search Dividend History Investing Lists Rulebooks &amp; Regulations Fundinsight Market Events Economic Calendar Earnings IPO Calendar Dividend Calendar Spo Calendar Holiday Schedule Analyst Activity Analyst Recommendations Daily Earnings Surprise Forecast Changes Commodities -&gt; Gold Copper Crude Oil Natural Gas Nasdaq Data Statistical Milestones Total Returns Daily Market Statistics Most Active See All Market Activity -&gt;.” Nasdaq, www.nasdaq.com/market-activity/stocks/cnc/historical.  
